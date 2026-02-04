@@ -31,30 +31,70 @@ Automated Claude Code and Codex session management with multi-channel notificati
 
 ## Getting Started with Discord
 
-**Primary use case:** Discord bot commands trigger Claude Code sessions with notifications routed back to Discord.
+**Primary use case:** Discord slash commands trigger Claude Code sessions with notifications routed back to Discord.
 
-**What you need:**
-1. ✅ OpenClaw/Clawdbot running with Discord channel configured
-2. ✅ Claude Code CLI installed (`claude` command available)
-3. ✅ This repository cloned and scripts executable
-4. ✅ Webhook token configured in OpenClaw
+### Prerequisites Checklist
 
-**Flow:**
+Before starting, ensure you have:
+
+- [ ] **Discord Bot Created** (https://discord.com/developers/applications)
+  - Bot token copied
+  - Intents enabled: Presence, Server Members, Message Content
+  - Scopes: `bot` + `applications.commands`
+  - Bot invited to your server
+  
+- [ ] **OpenClaw/Clawdbot Installed** (https://docs.openclaw.ai/)
+  - Gateway running: `openclaw status`
+  - Discord channel configured in `~/.openclaw/openclaw.json`
+  - Webhook enabled with secure token
+  
+- [ ] **Claude Code CLI Installed** (https://claude.ai/code)
+  - Command available: `which claude`
+  - Authenticated: `claude --version`
+  
+- [ ] **System Tools**
+  - tmux: `which tmux`
+  - jq: `which jq`
+  - Node.js: `which node`
+
+- [ ] **Discord IDs Collected**
+  - Guild ID (your server ID)
+  - Channel ID (where bot will send notifications)
+  - Enable Developer Mode in Discord to get these
+
+### How It Works
+
 ```
 Discord User: /plan new-feature
      ↓
-OpenClaw Bot → NEBO start-session.sh
+OpenClaw Bot detects slash command
      ↓
-Claude Code launches in tmux session
+Skill extracts channel: discord:channel:1466888482793459813
      ↓
-Monitor daemon watches for approval prompts
+NEBO start-session.sh launches Claude Code in tmux
      ↓
-Notification sent to Discord: "🚦 Needs approval..."
+Session registered: claude-1770236959 → discord:channel:123
      ↓
-User responds: "approve claude-1234567890"
+Monitor daemon polls session for approval prompts
      ↓
-Claude Code continues execution
+Approval detected → Notification sent to Discord
+     ↓
+User responds: "approve claude-1770236959" (or clicks button)
+     ↓
+Monitor handles approval → Claude Code continues
+     ↓
+Result posted to Discord when complete
 ```
+
+### What You'll Get
+
+Once setup is complete:
+
+✅ **Slash commands in Discord**: `/plan`, `/implement`, `/review`, `/codex-review`  
+✅ **Auto-approval or manual approval**: Choose your workflow  
+✅ **Multi-session support**: Multiple team members can run sessions concurrently  
+✅ **Web dashboard** (optional): Real-time monitoring at `https://your-domain.com`  
+✅ **Channel routing**: Notifications go back to the channel where command was invoked  
 
 **See full setup instructions below.** ⬇️
 
@@ -111,21 +151,250 @@ chmod 600 ~/.openclaw/openclaw.json
 
 ### 4. Install Skills in OpenClaw
 
-**Option A: Copy to OpenClaw skills directory**
+NEBO provides custom skills that integrate with OpenClaw's skill system. These become available as `/plan`, `/implement`, `/review`, etc.
+
+**Step 1: Copy skills to OpenClaw workspace**
+
+Find your OpenClaw workspace (usually `~/clawd` or `~/openclaw`):
+
 ```bash
-cp -r skills/* ~/path/to/your/openclaw/workspace/skills/
+# Example: if your workspace is ~/clawd
+cp -r skills/* ~/clawd/skills/
+
+# Or symlink to keep skills in sync with updates:
+ln -s $(pwd)/skills/plan ~/clawd/skills/plan
+ln -s $(pwd)/skills/implement ~/clawd/skills/implement
+ln -s $(pwd)/skills/review ~/clawd/skills/review
+ln -s $(pwd)/skills/codex-review ~/clawd/skills/codex-review
+ln -s $(pwd)/skills/systematic-debugging-c ~/clawd/skills/systematic-debugging-c
 ```
 
-**Option B: Symlink (keeps skills in sync)**
+**Step 2: Verify skills are loaded**
+
+Restart OpenClaw gateway to load new skills:
+
 ```bash
-ln -s $(pwd)/skills/* ~/path/to/your/openclaw/workspace/skills/
+openclaw gateway restart
 ```
 
-### 5. Configure Discord (Primary Channel)
+Check that skills are available:
+
+```bash
+openclaw skills list
+```
+
+You should see output like:
+```
+Available skills:
+- plan (Planning Phase)
+- implement (Implementation Phase)
+- review (Code Review Phase)
+- codex-review (Security & Code Quality Review)
+- systematic-debugging-c (Systematic Debugging)
+...
+```
+
+**Step 3: Register Discord slash commands**
+
+OpenClaw can register skills as Discord slash commands automatically.
+
+Edit your OpenClaw config (`~/.openclaw/openclaw.json`):
+
+```json
+{
+  "channels": {
+    "discord": {
+      "token": "YOUR_DISCORD_BOT_TOKEN",
+      "guilds": {
+        "YOUR_GUILD_ID": {
+          "name": "Your Server Name",
+          "slashCommands": {
+            "enabled": true,
+            "skills": [
+              "plan",
+              "implement",
+              "review",
+              "codex-review"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Step 4: Sync commands with Discord**
+
+After config changes, sync the commands:
+
+```bash
+openclaw gateway restart
+```
+
+Or if OpenClaw supports command sync without restart:
+
+```bash
+openclaw discord sync-commands
+```
+
+**Step 5: Verify in Discord**
+
+In your Discord server, type `/` in any channel where the bot has access. You should see:
+
+```
+/plan              - Start planning phase
+/implement         - Start implementation phase
+/review            - Start code review phase
+/codex-review      - Security & quality review
+```
+
+**Alternative: Manual registration (if auto-sync doesn't work)**
+
+If your OpenClaw version doesn't auto-register slash commands, you can do it manually:
+
+```bash
+# Install discord.js CLI tools
+npm install -g discord-slash-commands-cli
+
+# Register commands
+discord-slash-commands register \
+  --token YOUR_BOT_TOKEN \
+  --guild YOUR_GUILD_ID \
+  --commands discord-commands.json
+```
+
+Create `discord-commands.json`:
+
+```json
+[
+  {
+    "name": "plan",
+    "description": "Start planning phase with Claude Code",
+    "options": [
+      {
+        "name": "topic",
+        "description": "Feature or topic to plan",
+        "type": 3,
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "implement",
+    "description": "Start implementation phase with Claude Code",
+    "options": [
+      {
+        "name": "topic",
+        "description": "Feature or topic to implement",
+        "type": 3,
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "review",
+    "description": "Start code review phase with Claude Code",
+    "options": [
+      {
+        "name": "topic",
+        "description": "Feature or topic to review",
+        "type": 3,
+        "required": true
+      }
+    ]
+  },
+  {
+    "name": "codex-review",
+    "description": "Security and code quality review with Codex",
+    "options": [
+      {
+        "name": "path",
+        "description": "Path to review (optional)",
+        "type": 3,
+        "required": false
+      }
+    ]
+  }
+]
+```
+
+**Troubleshooting: Skills not appearing**
+
+```bash
+# Check skills directory
+ls -la ~/clawd/skills/
+
+# Check skill frontmatter (must have user-invocable: true)
+head -20 ~/clawd/skills/plan/SKILL.md
+
+# Check OpenClaw logs for errors
+journalctl -u openclaw-gateway -f
+
+# Verify SKILL.md format
+cat ~/clawd/skills/plan/SKILL.md
+```
+
+Each skill must have this frontmatter:
+
+```yaml
+---
+name: plan
+description: Planning Phase
+user-invocable: true
+---
+```
+
+### 5. Setup Discord Bot (If Not Already Done)
+
+If you haven't set up a Discord bot yet, follow these steps:
+
+**Step 1: Create Discord Application**
+
+1. Go to https://discord.com/developers/applications
+2. Click **New Application**
+3. Name it (e.g., "NEBO Bot")
+4. Go to **Bot** tab → Click **Add Bot**
+5. **Copy the bot token** (you'll need this for OpenClaw config)
+
+**Step 2: Configure Bot Permissions**
+
+In the **Bot** tab, enable these intents:
+- ✅ **Presence Intent**
+- ✅ **Server Members Intent**
+- ✅ **Message Content Intent**
+
+**Step 3: Generate Invite URL**
+
+In **OAuth2** → **URL Generator**:
+
+**Scopes:**
+- ✅ `bot`
+- ✅ `applications.commands`
+
+**Bot Permissions:**
+- ✅ Read Messages/View Channels
+- ✅ Send Messages
+- ✅ Send Messages in Threads
+- ✅ Embed Links
+- ✅ Attach Files
+- ✅ Add Reactions
+- ✅ Use Slash Commands
+
+Copy the generated URL and open it to invite the bot to your server.
+
+**Step 4: Get Discord IDs**
+
+In Discord client:
+1. Enable **Developer Mode**: User Settings → Advanced → Developer Mode
+2. Right-click your server → **Copy ID** (Guild ID)
+3. Right-click the channel → **Copy ID** (Channel ID)
+
+### 6. Configure Discord in OpenClaw
 
 **In Discord:**
 1. Get your OpenClaw bot running and connected to Discord
-2. Note your Discord channel ID (enable Developer Mode → right-click channel → Copy ID)
+2. Note your Discord channel ID (from Step 4 above)
 
 **In OpenClaw config (`~/.openclaw/openclaw.json`):**
 ```json
@@ -156,7 +425,7 @@ curl -X POST http://127.0.0.1:18789/hooks/agent \
 
 You should see the test message appear in Discord.
 
-### 6. Setup Dashboard (Optional but Recommended)
+### 7. Setup Dashboard (Optional but Recommended)
 
 The web dashboard provides real-time monitoring and quick approval actions.
 
@@ -220,7 +489,7 @@ cloudflared tunnel run nebo-dashboard
 https://your-subdomain.yourdomain.com/?token=YOUR_TOKEN
 ```
 
-### 7. Test It
+### 8. Test It
 
 From Discord (via OpenClaw bot):
 ```
@@ -236,21 +505,45 @@ Commands work the same way from any channel where OpenClaw is configured.
 
 ## Available Commands
 
-### Planning
-- `/plan [topic]` - Create implementation plan (manual approval)
-- `/plan-a [topic]` - Create plan (auto-approve, fast mode)
+### Discord Slash Commands
 
-### Implementation  
-- `/implement [topic]` - Implement feature (manual approval)
-- `/implement-a [topic]` - Implement (auto-approve, fast mode)
+Once skills are installed and synced with Discord, you can use these slash commands:
 
-### Review
-- `/review [topic]` - Code review (manual approval)
-- `/review-a [topic]` - Review (auto-approve, fast mode)
+**Planning:**
+- `/plan topic:feature-name` - Create implementation plan (manual approval)
+- `/plan-a topic:feature-name` - Create plan (auto-approve, fast mode)
 
-### Security & Debugging
-- `/codex-review [path]` - Security & quality review with Codex
-- `/systematic-debugging-c [bug]` - Systematic debugging framework
+**Implementation:**
+- `/implement topic:feature-name` - Implement feature (manual approval)
+- `/implement-a topic:feature-name` - Implement (auto-approve, fast mode)
+
+**Review:**
+- `/review topic:feature-name` - Code review (manual approval)
+- `/review-a topic:feature-name` - Review (auto-approve, fast mode)
+
+**Security & Debugging:**
+- `/codex-review path:src/` - Security & quality review with Codex
+- `/systematic-debugging-c bug:description` - Systematic debugging framework
+
+**Example usage in Discord:**
+```
+/plan topic:kids-plans-m2
+/implement topic:add-auth
+/review topic:kids-plans-m2
+/codex-review path:lib/
+```
+
+### Chat-style Commands (Alternative)
+
+If slash commands aren't configured, you can also invoke skills via chat:
+
+```
+@NEBOBot /plan kids-plans-m2
+@NEBOBot /implement add-auth
+@NEBOBot /review kids-plans-m2
+```
+
+**Note:** Slash commands (with `/` prefix in Discord UI) provide better UX with autocomplete and parameter hints.
 
 ---
 
@@ -410,6 +703,100 @@ curl -X POST http://127.0.0.1:18789/hooks/agent \
 cat /tmp/nebo-orchestrator/channel-registry.json | jq .
 # Should show your session → channel mapping
 ```
+
+### Slash Commands Not Appearing in Discord
+
+**Step 1: Verify bot has slash command scope**
+
+Check bot invite URL includes `applications.commands` scope:
+```
+https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=YOUR_PERMS&scope=bot%20applications.commands
+```
+
+If missing, re-invite the bot with correct scopes.
+
+**Step 2: Check OpenClaw config**
+
+```bash
+jq '.channels.discord.guilds' ~/.openclaw/openclaw.json
+```
+
+Should show:
+```json
+{
+  "YOUR_GUILD_ID": {
+    "slashCommands": {
+      "enabled": true,
+      "skills": ["plan", "implement", "review"]
+    }
+  }
+}
+```
+
+**Step 3: Restart OpenClaw to sync commands**
+
+```bash
+openclaw gateway restart
+```
+
+**Step 4: Wait for Discord cache**
+
+Discord can take 1-5 minutes to update slash commands. If still not showing:
+
+```bash
+# Force re-sync (if OpenClaw supports it)
+openclaw discord sync-commands --force
+```
+
+**Step 5: Check Discord guild commands**
+
+Using Discord API (requires bot token):
+
+```bash
+BOT_TOKEN="YOUR_BOT_TOKEN"
+GUILD_ID="YOUR_GUILD_ID"
+
+curl -H "Authorization: Bot $BOT_TOKEN" \
+  "https://discord.com/api/v10/applications/@me/guilds/$GUILD_ID/commands" | jq .
+```
+
+Should return array with your commands.
+
+**Step 6: Verify skill frontmatter**
+
+Each skill must have `user-invocable: true`:
+
+```bash
+head -10 ~/clawd/skills/plan/SKILL.md
+```
+
+Expected:
+```yaml
+---
+name: plan
+description: Planning Phase
+user-invocable: true
+---
+```
+
+**Step 7: Check OpenClaw logs**
+
+```bash
+journalctl -u openclaw-gateway -f | grep -i discord
+```
+
+Look for errors like:
+- "Failed to register command"
+- "Invalid token"
+- "Missing scope"
+
+**Common issues:**
+
+❌ **Bot missing `applications.commands` scope** → Re-invite bot  
+❌ **Skills not in OpenClaw workspace** → Copy skills and restart  
+❌ **Guild ID wrong** → Double-check Discord Developer Mode IDs  
+❌ **Bot token invalid** → Regenerate token in Discord Developer Portal  
+❌ **Permissions insufficient** → Bot needs "Use Slash Commands" permission  
 
 ### Sessions Not Starting
 
