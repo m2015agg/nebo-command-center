@@ -26,6 +26,7 @@ PROMPT=""
 SESSION=""
 AGENT="claude"  # claude or codex
 AUTO_START_MONITOR=true
+AUTO_APPROVE=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -54,10 +55,14 @@ while [[ $# -gt 0 ]]; do
             AUTO_START_MONITOR=false
             shift
             ;;
+        --auto-approve)
+            AUTO_APPROVE=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1" >&2
             echo "" >&2
-            echo "Usage: $0 --workdir DIR --channel CHANNEL [--prompt TEXT] [--session NAME] [--agent claude|codex]" >&2
+            echo "Usage: $0 --workdir DIR --channel CHANNEL [--prompt TEXT] [--session NAME] [--agent claude|codex] [--auto-approve]" >&2
             exit 1
             ;;
     esac
@@ -159,7 +164,14 @@ for i in {1..5}; do
     sleep 1
 done
 
-# Step 5: Send prompt if provided
+# Step 5: Enable auto-approve if requested
+if [ "$AUTO_APPROVE" = true ]; then
+    echo "[Nebo] Enabling auto-approve mode..."
+    # Store auto-approve preference in registry
+    "$SCRIPT_DIR/lib/register-session-channel.sh" "$SESSION" "$CHANNEL" "auto-approve"
+fi
+
+# Step 6: Send prompt if provided
 if [ -n "$PROMPT" ]; then
     echo "[Nebo] Sending prompt..."
     sleep 7  # Extra wait after trust prompt

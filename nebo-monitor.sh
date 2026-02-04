@@ -103,9 +103,36 @@ hash_prompt() {
 get_session_channel() {
     local session="$1"
     if [ -f "$CHANNEL_REGISTRY" ]; then
-        jq -r --arg sess "$session" '.[$sess] // empty' "$CHANNEL_REGISTRY" 2>/dev/null || echo ""
+        # Support both old format (string) and new format (object with .channel property)
+        local result
+        result=$(jq -r --arg sess "$session" '
+            if .[$sess] | type == "object" then
+                .[$sess].channel // empty
+            else
+                .[$sess] // empty
+            end
+        ' "$CHANNEL_REGISTRY" 2>/dev/null || echo "")
+        echo "$result"
     else
         echo ""
+    fi
+}
+
+get_session_auto_approve() {
+    local session="$1"
+    if [ -f "$CHANNEL_REGISTRY" ]; then
+        # Check if auto-approve is enabled for this session
+        local result
+        result=$(jq -r --arg sess "$session" '
+            if .[$sess] | type == "object" then
+                .[$sess].autoApprove // false
+            else
+                false
+            end
+        ' "$CHANNEL_REGISTRY" 2>/dev/null || echo "false")
+        echo "$result"
+    else
+        echo "false"
     fi
 }
 
@@ -350,30 +377,44 @@ while true; do
         if check_session_approval "$session"; then
             echo "$session" >> "$WAITING_SESSIONS_FILE"
 
-            DETAILS=$(extract_approval_details "$session")
-            PROMPT_HASH=$(hash_prompt "$DETAILS")
+            # Check if auto-approve is enabled for this session
+            AUTO_APPROVE=$(get_session_auto_approve "$session")
+            
+            if [ "$AUTO_APPROVE" = "true" ]; then
+                # Auto-approve enabled: automatically send approval
+                log "INFO" "Auto-approving session '$session'"
+                if [ -x "$LIB_DIR/handle-approval.sh" ]; then
+                    "$LIB_DIR/handle-approval.sh" approve "$session" >/dev/null 2>&1 || true
+                fi
+                # Clear state since we handled it
+                clear_notify_state "$session"
+            else
+                # Manual approval: send notification
+                DETAILS=$(extract_approval_details "$session")
+                PROMPT_HASH=$(hash_prompt "$DETAILS")
 
-            STATE=$(get_notify_state "$session")
-            LAST_NOTIFIED=$(echo "$STATE" | cut -d'|' -f1)
-            REMINDER_COUNT=$(echo "$STATE" | cut -d'|' -f2)
-            LAST_HASH=$(echo "$STATE" | cut -d'|' -f3)
+                STATE=$(get_notify_state "$session")
+                LAST_NOTIFIED=$(echo "$STATE" | cut -d'|' -f1)
+                REMINDER_COUNT=$(echo "$STATE" | cut -d'|' -f2)
+                LAST_HASH=$(echo "$STATE" | cut -d'|' -f3)
 
-            TIME_SINCE_NOTIFY=$((CURRENT_TIME - LAST_NOTIFIED))
+                TIME_SINCE_NOTIFY=$((CURRENT_TIME - LAST_NOTIFIED))
 
-            SHOULD_NOTIFY=false
-            NEW_REMINDER_COUNT=0
-
-            if [ "$PROMPT_HASH" != "$LAST_HASH" ]; then
-                SHOULD_NOTIFY=true
+                SHOULD_NOTIFY=false
                 NEW_REMINDER_COUNT=0
-            elif [ "$TIME_SINCE_NOTIFY" -ge "$REMINDER_INTERVAL" ]; then
-                SHOULD_NOTIFY=true
-                NEW_REMINDER_COUNT=$((REMINDER_COUNT + 1))
-            fi
 
-            if [ "$SHOULD_NOTIFY" = true ]; then
-                if send_notification "$session" "$DETAILS" "$NEW_REMINDER_COUNT"; then
-                    set_notify_state "$session" "$CURRENT_TIME" "$NEW_REMINDER_COUNT" "$PROMPT_HASH"
+                if [ "$PROMPT_HASH" != "$LAST_HASH" ]; then
+                    SHOULD_NOTIFY=true
+                    NEW_REMINDER_COUNT=0
+                elif [ "$TIME_SINCE_NOTIFY" -ge "$REMINDER_INTERVAL" ]; then
+                    SHOULD_NOTIFY=true
+                    NEW_REMINDER_COUNT=$((REMINDER_COUNT + 1))
+                fi
+
+                if [ "$SHOULD_NOTIFY" = true ]; then
+                    if send_notification "$session" "$DETAILS" "$NEW_REMINDER_COUNT"; then
+                        set_notify_state "$session" "$CURRENT_TIME" "$NEW_REMINDER_COUNT" "$PROMPT_HASH"
+                    fi
                 fi
             fi
         fi

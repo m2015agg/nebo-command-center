@@ -1,20 +1,23 @@
 #!/bin/bash
 # register-session-channel.sh - Register a Claude Code session with its source channel
-# Usage: register-session-channel.sh <session-name> <channel-target>
+# Usage: register-session-channel.sh <session-name> <channel-target> [auto-approve]
 #
 # Example:
 #   register-session-channel.sh claude-1234567 "discord:channel:1466888482793459813"
+#   register-session-channel.sh claude-7654321 "discord:channel:123" "auto-approve"
 
 set -e
 
 SESSION="${1:-}"
 CHANNEL="${2:-}"
+AUTO_APPROVE="${3:-}"
 
 if [ -z "$SESSION" ] || [ -z "$CHANNEL" ]; then
-    echo "Usage: $0 <session-name> <channel-target>" >&2
+    echo "Usage: $0 <session-name> <channel-target> [auto-approve]" >&2
     echo "" >&2
     echo "Example:" >&2
     echo "  $0 claude-1234567 'discord:channel:1466888482793459813'" >&2
+    echo "  $0 claude-1234567 'discord:channel:123' 'auto-approve'" >&2
     exit 1
 fi
 
@@ -39,13 +42,32 @@ chmod 700 "$STATE_DIR"
 
 # Update registry
 TEMP_FILE=$(mktemp)
-if [ -f "$CHANNEL_REGISTRY" ]; then
-    jq --arg sess "$SESSION" --arg chan "$CHANNEL" '.[$sess] = $chan' "$CHANNEL_REGISTRY" > "$TEMP_FILE"
+
+# Determine auto-approve setting
+if [ "$AUTO_APPROVE" = "auto-approve" ]; then
+    AUTO_APPROVE_JSON="true"
 else
-    echo "{\"$SESSION\": \"$CHANNEL\"}" | jq '.' > "$TEMP_FILE"
+    AUTO_APPROVE_JSON="false"
+fi
+
+if [ -f "$CHANNEL_REGISTRY" ]; then
+    jq --arg sess "$SESSION" \
+       --arg chan "$CHANNEL" \
+       --argjson auto "$AUTO_APPROVE_JSON" \
+       '.[$sess] = {channel: $chan, autoApprove: $auto}' \
+       "$CHANNEL_REGISTRY" > "$TEMP_FILE"
+else
+    jq -n --arg sess "$SESSION" \
+          --arg chan "$CHANNEL" \
+          --argjson auto "$AUTO_APPROVE_JSON" \
+          '{($sess): {channel: $chan, autoApprove: $auto}}' > "$TEMP_FILE"
 fi
 
 mv "$TEMP_FILE" "$CHANNEL_REGISTRY"
 chmod 600 "$CHANNEL_REGISTRY"
 
-echo "✓ Registered session '$SESSION' → channel '$CHANNEL'"
+if [ "$AUTO_APPROVE" = "auto-approve" ]; then
+    echo "✓ Registered session '$SESSION' → channel '$CHANNEL' (AUTO-APPROVE ENABLED)"
+else
+    echo "✓ Registered session '$SESSION' → channel '$CHANNEL'"
+fi
