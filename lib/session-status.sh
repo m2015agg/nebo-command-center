@@ -77,14 +77,20 @@ OUTPUT=$(tmux capture-pane -t "$SESSION_NAME" -p | tail -20)
 STATUS="unknown"
 DETAILS=""
 
-if echo "$OUTPUT" | grep -qE "Allow this tool call|y/n/always|Do you want to|❯ 1\. Yes|Yes, allow|No, deny|Allow once|Yes, allow once|No, skip this"; then
+# Patterns for Claude Code and Codex approval prompts
+# Claude Code: "Do you want to", "Allow this tool call", "y/n/always", "❯ 1. Yes"
+# Codex: "approve", "deny", "edit", "[a]pprove", "[d]eny", "Run command"
+if echo "$OUTPUT" | grep -qE "Allow this tool call|y/n/always|Do you want to|❯ 1\. Yes|Yes, allow|No, deny|Allow once|Yes, allow once|No, skip this|\[a\]pprove|\[d\]eny|\[e\]dit|Run command|approve.*deny"; then
     STATUS="waiting_approval"
     # Try to extract what's being approved
-    DETAILS=$(echo "$OUTPUT" | grep -E "Create file|Write\(|Edit\(|Bash\(|Read\(" | head -1 || echo "Approval needed")
+    DETAILS=$(echo "$OUTPUT" | grep -E "Create file|Write\(|Edit\(|Bash\(|Read\(|run:|exec:|command:" | head -1 || echo "Approval needed")
 elif echo "$OUTPUT" | grep -qE "Error:|Failed:|Exception:|error\["; then
     STATUS="error"
     DETAILS=$(echo "$OUTPUT" | grep -E "Error:|Failed:|Exception:|error\[" | tail -1 || echo "")
-elif echo "$OUTPUT" | grep -qE "⏺|●|Thinking|Working|Reading|Writing|Executing|Running|Searching|Analyzing"; then
+# Working indicators for both Claude Code and Codex
+# Claude: ⏺, ●, Thinking, Working, etc.
+# Codex: spinner, loading, processing indicators
+elif echo "$OUTPUT" | grep -qE "⏺|●|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Thinking|Working|Reading|Writing|Executing|Running|Searching|Analyzing|processing|loading"; then
     STATUS="working"
     DETAILS=$(echo "$OUTPUT" | tail -3 | head -1 || echo "Processing...")
 elif echo "$OUTPUT" | grep -qE "❯|>\s*$|\\$\s*$|%\s*$"; then

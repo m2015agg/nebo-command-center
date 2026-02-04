@@ -26,13 +26,17 @@ When user message matches these patterns, IMMEDIATELY run:
 When user requests coding work:
 
 ```bash
-~/nebo-command-center/nebo-session.sh \
+~/nebo-command-center/start-session.sh \
   --session "<session-name>" \
   --workdir "<project-dir>" \
   --prompt "<task>" \
   --channel "<discord-channel-id>" \
   --agent claude  # or codex
 ```
+
+**Agent options:**
+- `--agent claude` (default) - Use Claude Code CLI
+- `--agent codex` - Use OpenAI Codex CLI
 
 Get Discord channel ID from current session context.
 
@@ -42,7 +46,7 @@ Get Discord channel ID from current session context.
 |-----------|--------|
 | `sessions` or `status` | List active tmux sessions |
 | `status <session>` | Show session output |
-| `kill <session>` | Kill session + cleanup |
+| `kill <session>` | `~/nebo-command-center/lib/session-cleanup.sh <session>` |
 | `dashboard` | Link to mg-admin.nebopartners.com |
 
 ## Session Naming

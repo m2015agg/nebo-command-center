@@ -24,6 +24,7 @@ WORKDIR=""
 CHANNEL=""
 PROMPT=""
 SESSION=""
+AGENT="claude"  # claude or codex
 AUTO_START_MONITOR=true
 
 # Parse arguments
@@ -45,6 +46,10 @@ while [[ $# -gt 0 ]]; do
             SESSION="$2"
             shift 2
             ;;
+        --agent)
+            AGENT="$2"
+            shift 2
+            ;;
         --no-auto-monitor)
             AUTO_START_MONITOR=false
             shift
@@ -52,7 +57,7 @@ while [[ $# -gt 0 ]]; do
         *)
             echo "Unknown option: $1" >&2
             echo "" >&2
-            echo "Usage: $0 --workdir DIR --channel CHANNEL [--prompt TEXT] [--session NAME]" >&2
+            echo "Usage: $0 --workdir DIR --channel CHANNEL [--prompt TEXT] [--session NAME] [--agent claude|codex]" >&2
             exit 1
             ;;
     esac
@@ -74,6 +79,18 @@ if [ ! -d "$WORKDIR" ]; then
     exit 1
 fi
 
+# Validate agent
+if [[ ! "$AGENT" =~ ^(claude|codex)$ ]]; then
+    echo "Error: --agent must be 'claude' or 'codex'" >&2
+    exit 1
+fi
+
+# Check if agent CLI is available
+if ! command -v "$AGENT" &>/dev/null; then
+    echo "Error: $AGENT CLI is not installed" >&2
+    exit 1
+fi
+
 # Generate session name if not provided
 if [ -z "$SESSION" ]; then
     SESSION="claude-$(date +%s)"
@@ -85,10 +102,11 @@ if [[ ! "$SESSION" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     exit 1
 fi
 
-echo "[Nebo] Starting Claude Code session with monitoring"
+echo "[Nebo] Starting $AGENT session with monitoring"
 echo "[Nebo] Session: $SESSION"
 echo "[Nebo] Workdir: $WORKDIR"
 echo "[Nebo] Channel: $CHANNEL"
+echo "[Nebo] Agent: $AGENT"
 if [ -n "$PROMPT" ]; then
     echo "[Nebo] Prompt: $PROMPT"
 fi
@@ -121,9 +139,9 @@ fi
 echo "[Nebo] Creating tmux session..."
 tmux new-session -d -s "$SESSION" -c "$WORKDIR"
 
-# Step 4: Start Claude Code
-echo "[Nebo] Launching Claude Code..."
-tmux send-keys -t "$SESSION" "claude" C-m
+# Step 4: Start agent (Claude Code or Codex)
+echo "[Nebo] Launching $AGENT..."
+tmux send-keys -t "$SESSION" "$AGENT" C-m
 
 # Wait for initialization
 sleep 5
